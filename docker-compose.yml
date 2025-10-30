@@ -1,0 +1,27 @@
+version: "3.9"
+
+services:
+  iris:
+    build: .
+    command: python -m app.main
+    env_file: .env
+    environment:
+      YOLO_CONFIG_DIR: /tmp/Ultralytics
+      # Connect to RTSP server hosted on the host machine or via service link
+      RTSP_URL: rtsp://host.docker.internal:8554/iris
+    stdin_open: true
+    tty: true
+    volumes:
+      - ./models:/models:ro
+      - ./shared_audio:/shared_audio
+      - ./shared_previews:/shared_previews
+      - ./app:/app/app
+    depends_on:
+      - rtsp
+
+  rtsp:
+    image: bluenviron/mediamtx:latest
+    container_name: rtsp
+    ports:
+      - "8554:8554"
+    restart: unless-stopped

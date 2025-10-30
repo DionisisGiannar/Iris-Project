@@ -1,0 +1,10 @@
+av
+faster-whisper
+ultralytics
+opencv-python-headless
+numpy
+rich
+webrtcvad
+piper-tts
+onnxruntime
+

@@ -1,0 +1,4 @@
+sync: false
+datasets_dir: /models/yolo
+check_files: false
+update: false
