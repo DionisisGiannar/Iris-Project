@@ -95,6 +95,7 @@ Set `PLAYBACK_COMMAND` in your `.env` (for example, `ffplay -autoexit -nodisp -f
 - `FRAME_FLUSH_LIMIT`: Maximum number of extra frames drained from the RTSP buffer each cycle (default `5`).
 - `FRAME_DESCRIBE_COUNT`: Number of recent frames to evaluate per description (default `3`).
 - `FRAME_MAX_AGE_SECONDS`: Maximum age of frames (seconds) considered for descriptions (default `1.5`).
+- `LIVE_PREVIEW_PATH`: File path where the latest raw frame is written every capture (`/shared_previews/live_preview.jpg` by default).
 - `FRAME_FLUSH_LIMIT`: Maximum number of extra frames drained from the RTSP buffer each cycle (default `5`).
 
 ## How the Loop Works

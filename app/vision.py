@@ -8,6 +8,7 @@ import threading
 import time
 from collections import Counter, deque
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Deque, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import cv2
@@ -50,8 +51,12 @@ class FrameBuffer:
         self._fps_counter = 0
         self._fps_window_start = time.time()
         self._ready_event = threading.Event()
-        self._fps_counter = 0
-        self._fps_window_start = time.time()
+        live_path_env = os.getenv("LIVE_PREVIEW_PATH")
+        self.live_preview_path = Path(live_path_env) if live_path_env else Path("/shared_previews/live_preview.jpg")
+        try:
+            self.live_preview_path.parent.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            logger.exception("Unable to create live preview directory at %s", self.live_preview_path.parent)
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -116,6 +121,7 @@ class FrameBuffer:
                 self._reset_capture()
                 time.sleep(0.5)
                 continue
+            frame_to_save = frame.copy()
             with self._lock:
                 self._frames.append(frame)
                 self._timestamps.append(time.time())
@@ -133,8 +139,13 @@ class FrameBuffer:
                     )
                     self._fps_counter = 0
                     self._fps_window_start = now
-            if delay > 0 and len(self._frames) < self._frames.maxlen:
-                time.sleep(delay)
+            if self.live_preview_path:
+                try:
+                    cv2.imwrite(str(self.live_preview_path), frame_to_save)
+                except Exception:
+                    logger.exception("Failed to write live preview to %s", self.live_preview_path)
+            # if delay > 0 and len(self._frames) < self._frames.maxlen:
+            #     time.sleep(delay)
 
     def _ensure_capture(self) -> bool:
         if self.capture and self.capture.isOpened():
