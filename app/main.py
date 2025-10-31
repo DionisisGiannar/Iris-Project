@@ -6,15 +6,24 @@ import logging
 import os
 import signal
 import sys
+import threading
+import time
+
 import cv2
 from rich.console import Console
 from rich.logging import RichHandler
 
 from audio import AudioIngest
 from asr import SpeechRecognizer
-from intent import Intent, classify_intent
+from orchestrator import (
+    can_speak_now,
+    handle_intent,
+    note_spoken,
+    parse_intent,
+    state,
+)
 from tts_voice import IrisVoice
-from utils import env_flag, env_path, ensure_directory, timestamp_id
+from utils import env_flag, env_path, ensure_directory
 from vad import VoiceActivityDetector
 from vision import FrameBuffer, SceneDescriber
 
@@ -95,6 +104,7 @@ def main() -> None:
         aggressiveness=vad_aggressiveness,
     )
     shutdown = False
+    goal_monitor_stop = threading.Event()
 
     def handle_signal(signum, _frame):
         nonlocal shutdown
@@ -104,11 +114,32 @@ def main() -> None:
     signal.signal(signal.SIGINT, handle_signal)
     signal.signal(signal.SIGTERM, handle_signal)
 
+    def goal_monitor_loop() -> None:
+        """Background loop that keeps persistent goal search alive."""
+        logger.debug("Starting goal monitor loop.")
+        while not goal_monitor_stop.is_set():
+            if shutdown:
+                break
+            if state.active_goal and not state.paused:
+                frame = frame_buffer.latest()
+                if frame is not None:
+                    try:
+                        describer.tick_search_goal(frame, iris_voice)
+                    except Exception:
+                        logger.exception("Goal monitor tick failed.")
+                else:
+                    logger.debug("Goal monitor: no latest frame available.")
+            time.sleep(0.4)
+        logger.debug("Goal monitor loop stopped.")
+
+    goal_thread = threading.Thread(target=goal_monitor_loop, name="GoalMonitor", daemon=True)
+
     try:
         frame_buffer.start()
         if not frame_buffer.wait_until_ready(timeout=3.0):
             logger.warning("Frame buffer did not deliver frames within 3 seconds; descriptions may lag.")
         audio_ingest.start()
+        goal_thread.start()
         preview_active = preview_enabled
         need_preview_frame = preview_enabled or save_previews
 
@@ -119,20 +150,27 @@ def main() -> None:
             if not transcript:
                 continue
             console.log(f"[bold blue]You[/bold blue]: {transcript}")
-            intent = classify_intent(transcript)
-            if intent == Intent.QUIT:
-                console.log("[bold yellow]Quit requested. Exiting.[/bold yellow]")
-                shutdown = True
-                break
+            intent_name, slots, addressed = parse_intent(transcript)
+            if not addressed:
+                logger.debug("Ignoring utterance without wake word or clear command.")
+                continue
 
+            latest_frame = frame_buffer.latest()
             frames = frame_buffer.get_recent(describe_frame_count, max_age=describe_max_age)
-            description, preview_frame = describer.describe(frames, preview=need_preview_frame)
-            console.log(f"[bold magenta]Iris[/bold magenta]: {description}")
-            try:
-                pcm_bytes, pcm_rate = iris_voice.speak(description)
-                logger.info("Spoke response (%d bytes at %d Hz)", len(pcm_bytes), pcm_rate)
-            except Exception:
-                logger.exception("Failed to speak response.")
+            result = handle_intent(
+                intent_name,
+                slots,
+                describer=describer,
+                frames=frames,
+                preview=need_preview_frame,
+                tts=iris_voice,
+                latest_frame=latest_frame,
+            )
+            response_text = result.get("message")
+            preview_frame = result.get("preview_frame")
+
+            if response_text:
+                console.log(f"[bold magenta]Iris[/bold magenta]: {response_text}")
 
             if save_previews and preview_frame is not None:
                 preview_path = preview_dir / f"last_preview.jpg"
@@ -156,8 +194,11 @@ def main() -> None:
     except KeyboardInterrupt:
         logger.info("Interrupted by user. Exiting.")
     finally:
+        goal_monitor_stop.set()
         audio_ingest.stop()
         frame_buffer.stop()
+        if goal_thread.is_alive():
+            goal_thread.join(timeout=1.0)
         try:
             cv2.destroyAllWindows()
         except cv2.error:

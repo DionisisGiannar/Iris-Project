@@ -23,6 +23,14 @@ SETTINGS.update({
 
 logger = logging.getLogger(__name__)
 
+try:
+    from orchestrator import can_speak_now, clear_goal, note_spoken, state
+except Exception:  # pragma: no cover - orchestrator introduced later in startup
+    can_speak_now = None  # type: ignore
+    clear_goal = None  # type: ignore
+    note_spoken = None  # type: ignore
+    state = None  # type: ignore
+
 
 @dataclass
 class Detection:
@@ -122,11 +130,11 @@ class FrameBuffer:
                 if now - self._fps_window_start >= 5.0:
                     elapsed = now - self._fps_window_start
                     fps = self._fps_counter / elapsed if elapsed > 0 else 0.0
-                    logger.debug(
-                        "FrameBuffer capture FPS: %.2f (buffer_size=%d)",
-                        fps,
-                        len(self._frames),
-                    )
+                    # logger.debug(
+                    #     "FrameBuffer capture FPS: %.2f (buffer_size=%d)",
+                    #     fps,
+                    #     len(self._frames),
+                    # )
                     self._fps_counter = 0
                     self._fps_window_start = now
             if self.live_preview_path:
@@ -254,6 +262,76 @@ class SceneDescriber:
         if len(sentence.split()) > 25:
             sentence = self._trim_words(sentence, max_words=25)
         return sentence, preview_frame
+
+    # ------------------------------------------------------------------ #
+    @staticmethod
+    def where_in_fov(bbox: Tuple[int, int, int, int], width: int) -> str:
+        """Return a coarse relative position for a bounding box."""
+        x1, _y1, x2, _y2 = bbox
+        cx = (x1 + x2) // 2
+        if cx < width // 3:
+            return "left"
+        if cx > (2 * width) // 3:
+            return "right"
+        return "center"
+
+    @staticmethod
+    def select_best_match(detections: Sequence[Detection], target: str) -> Detection | None:
+        """Return the highest-confidence detection matching the target string."""
+        if not detections or not target:
+            return None
+        target_norm = target.lower().strip()
+        # tolerate prefix such as "my " or "the "
+        for prefix in ("my ", "the ", "a ", "an "):
+            if target_norm.startswith(prefix):
+                target_norm = target_norm[len(prefix):]
+                break
+        best: Detection | None = None
+        best_conf = 0.0
+        for det in detections:
+            label = det.label.lower()
+            if target_norm in label or label in target_norm:
+                if det.confidence > best_conf:
+                    best = det
+                    best_conf = det.confidence
+        return best
+
+    def tick_search_goal(self, frame: np.ndarray, tts) -> bool:
+        """Evaluate the current frame against any active goal."""
+        if state is None or can_speak_now is None or note_spoken is None or clear_goal is None:
+            return False
+        if not state.active_goal or state.paused:
+            return False
+        detections = self.detect(frame)
+        if not detections:
+            return False
+        match = self.select_best_match(detections, state.active_goal)
+        if not match or match.confidence < 0.5:
+            return False
+        height, width = frame.shape[:2]
+        location = self.where_in_fov(match.bbox, width)
+        spoken_name = match.label
+        if can_speak_now():
+            phrase = f"I see a {spoken_name} on your {location}."
+            try:
+                tts.say(phrase)
+            except Exception:
+                logger.exception("Failed to speak persistent goal confirmation.")
+            else:
+                note_spoken()
+            goal_name = state.active_goal
+            clear_goal()
+            state.pending_goal = None
+            state.awaiting_goal_confirmation = False
+            logger.info(
+                "Persistent goal '%s' satisfied with confidence %.2f at %s.",
+                goal_name,
+                match.confidence,
+                location,
+            )
+        else:
+            logger.info("Goal match detected but speech suppressed (cooldown/pause).")
+        return True
 
     # ------------------------------------------------------------------ #
     @staticmethod

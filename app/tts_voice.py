@@ -71,6 +71,11 @@ class IrisVoice:
         
         return pcm_bytes, rate
 
+    def say(self, text: str) -> None:
+        """Convenience wrapper matching orchestrator expectations."""
+        pcm_bytes, rate = self.speak(text)
+        logger.debug("Synthesized %d bytes at %d Hz for text='%s'", len(pcm_bytes), rate, text)
+
     # ------------------------------------------------------------------ #
     def _synthesize(self, text: str) -> Tuple[bytes, int, int, int]:
         stream = self.voice.synthesize(text)

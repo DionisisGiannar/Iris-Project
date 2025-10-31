@@ -24,6 +24,8 @@ VIDEO_TUNE="${VIDEO_TUNE:-zerolatency}"
 VIDEO_PRESET="${VIDEO_PRESET:-ultrafast}"
 
 FFMPEG_BIN="${FFMPEG_BIN:-ffmpeg}"
+FFMPEG_LOGLEVEL="${FFMPEG_LOGLEVEL:-error}"
+FFMPEG_LOG_PATH="${FFMPEG_LOG_PATH:-/tmp/ffmpeg_publisher.log}"
 
 # Optional flags
 UP_BUILD=""
@@ -54,7 +56,11 @@ else
 fi
 
 echo "[run_iris] Launching ffmpeg publisher from avfoundation device ${AVFOUNDATION_SOURCE} → ${RTSP_URL}"
+echo "[run_iris] ffmpeg logs at ${FFMPEG_LOG_PATH} (level=${FFMPEG_LOGLEVEL})"
 ${FFMPEG_BIN} \
+    -hide_banner \
+    -nostats \
+    -loglevel "${FFMPEG_LOGLEVEL}" \
     -f avfoundation \
     -framerate "${FRAME_RATE}" \
     -pixel_format uyvy422 \
@@ -74,7 +80,8 @@ ${FFMPEG_BIN} \
     -max_delay "${RTSP_MAX_DELAY}" \
     -f rtsp \
     -rtsp_transport tcp \
-    "${RTSP_URL}" &
+    "${RTSP_URL}" \
+    >"${FFMPEG_LOG_PATH}" 2>&1 &
 PUBLISH_PID=$!
 
 sleep 2

@@ -12,7 +12,7 @@ class Intent(str, Enum):
     QUIT = "quit"
 
 
-STOP_KEYWORDS = {"quit", "exit", "stop app", "stop"}
+STOP_KEYWORDS = {"quit", "exit", "stop app", "goodbye", "shut down", "terminate"}
 
 
 def classify_intent(text: str) -> Intent:
