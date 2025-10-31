@@ -71,7 +71,7 @@ def main() -> None:
     describer = SceneDescriber(str(yolo_weights))
     iris_voice = IrisVoice(str(piper_voice), playback_command=os.getenv("PLAYBACK_COMMAND"))
     frame_history_seconds = float(os.getenv("FRAME_HISTORY_SECONDS", "1.0"))
-    frame_target_fps = float(os.getenv("FRAME_TARGET_FPS", "8.0"))
+    frame_target_fps = float(os.getenv("FRAME_TARGET_FPS", "25.0"))
     frame_buffer = FrameBuffer(rtsp_url, max_seconds=frame_history_seconds, target_fps=frame_target_fps)
     audio_ingest_kwargs = dict(
         rtsp_url=rtsp_url,

@@ -1,3 +1,4 @@
-shared_previews/*.jpg
+shared_previews/*
+shared_audio/*
 .DS_Store
 */__pycache__/*

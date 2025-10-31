@@ -37,7 +37,7 @@ class Detection:
 class FrameBuffer:
     """Background frame reader that keeps the most recent frames from a stream."""
 
-    def __init__(self, rtsp_url: str, max_seconds: float = 1.0, target_fps: float = 8.0) -> None:
+    def __init__(self, rtsp_url: str, max_seconds: float = 1.0, target_fps: float = 25.0) -> None:
         self.rtsp_url = rtsp_url
         self.target_fps = target_fps
         self.capture: Optional[cv2.VideoCapture] = None
@@ -47,7 +47,6 @@ class FrameBuffer:
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         self._lock = threading.Lock()
-        self.flush_limit = int(os.getenv("FRAME_FLUSH_LIMIT", "5"))
         self._fps_counter = 0
         self._fps_window_start = time.time()
         self._ready_event = threading.Event()
@@ -98,14 +97,6 @@ class FrameBuffer:
         ret, frame = self.capture.read()
         if not ret:
             return None
-        flush_iters = max(0, self.flush_limit)
-        for _ in range(flush_iters):
-            if not self.capture.grab():
-                break
-            ret_retrieve, latest = self.capture.retrieve()
-            if not ret_retrieve:
-                break
-            frame = latest
         return frame
 
     def _reader(self) -> None:
@@ -132,20 +123,25 @@ class FrameBuffer:
                     elapsed = now - self._fps_window_start
                     fps = self._fps_counter / elapsed if elapsed > 0 else 0.0
                     logger.debug(
-                        "FrameBuffer capture FPS: %.2f (flush_limit=%d, buffer_size=%d)",
+                        "FrameBuffer capture FPS: %.2f (buffer_size=%d)",
                         fps,
-                        self.flush_limit,
                         len(self._frames),
                     )
                     self._fps_counter = 0
                     self._fps_window_start = now
             if self.live_preview_path:
                 try:
-                    cv2.imwrite(str(self.live_preview_path), frame_to_save)
+                    success, encoded = cv2.imencode(
+                        ".jpg",
+                        frame_to_save,
+                        [int(cv2.IMWRITE_JPEG_QUALITY), 85],
+                    )
+                    if success:
+                        with open(self.live_preview_path, "wb") as f:
+                            f.write(encoded.tobytes())
                 except Exception:
                     logger.exception("Failed to write live preview to %s", self.live_preview_path)
-            # if delay > 0 and len(self._frames) < self._frames.maxlen:
-            #     time.sleep(delay)
+
 
     def _ensure_capture(self) -> bool:
         if self.capture and self.capture.isOpened():
@@ -153,7 +149,7 @@ class FrameBuffer:
         self._reset_capture()
         self.capture = cv2.VideoCapture(self.rtsp_url)
         if self.capture and self.capture.isOpened():
-            self.capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                self.capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         if not self.capture.isOpened():
             self._reset_capture()
             return False
@@ -254,7 +250,7 @@ class SceneDescriber:
             phrases.append(phrase)
 
         description = self._join_phrases(phrases)
-        sentence = f"I see {description}."
+        sentence = f"There is {description}."
         if len(sentence.split()) > 25:
             sentence = self._trim_words(sentence, max_words=25)
         return sentence, preview_frame
