@@ -1,6 +1,6 @@
 # Iris Assistant
 
-Iris is an offline, CPU-only assistant that watches an RTSP stream, listens for short push-to-talk style utterances, and responds with concise scene descriptions. Inside Docker it keeps all models on disk and never downloads assets at runtime.
+Iris is an assistant that watches an RTSP stream, listens for short push-to-talk style utterances, and responds with concise scene descriptions. Inside Docker it keeps all models on disk and never downloads assets at runtime.
 
 ## Features
 - YOLOv8 scene understanding (Ultralytics, small weights) with left/center/right hints.
